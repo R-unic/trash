@@ -165,11 +165,11 @@ export class Trash {
       }
 
       if (typeIs(item, "thread")) {
-        let wasCancelled = false;
+        let wasCanceled = false;
         if (coroutine.running() !== item)
-          [wasCancelled] = pcall(() => cancelThread(item));
+          [wasCanceled] = pcall(() => cancelThread(item));
 
-        if (!wasCancelled)
+        if (!wasCanceled)
           defer(() => cancelThread(item));
 
         continue;
@@ -177,6 +177,7 @@ export class Trash {
 
       item();
     }
+    this.removeAll();
   }
 
   /** Clears tracked items without invoking their cleanup methods  */
@@ -190,7 +191,6 @@ export class Trash {
    */
   public destroy(): void {
     this.purge();
-    this.removeAll();
     setmetatable(this, undefined);
   }
 }
