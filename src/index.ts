@@ -29,6 +29,12 @@ export type TrashItem =
   | Callback
   | ImpendingMethodCall;
 
+interface LinkInstanceOptions {
+  readonly allowMultiple?: boolean;
+  readonly trackInstance?: boolean;
+  readonly completelyDestroy?: boolean;
+}
+
 const { cancel: cancelThread } = task;
 const fastDestroy = game.Destroy as (instance: Instance) => void;
 
@@ -53,6 +59,7 @@ const isImpendingMethodCall = t.strictArray(t.table, t.callback) as t.check<Impe
 
 export class Trash {
   private tracked: TrashItem[];
+  private linkedInstances = new Set<Instance>;
 
   /**
    * Constructs a new Trash instance.
@@ -93,6 +100,17 @@ export class Trash {
     );
 
     return typeIs(item, "function") ? undefined : item;
+  }
+
+  public linkToInstance(instance: Instance, { allowMultiple = false, trackInstance = true }: LinkInstanceOptions = {}): void {
+    if (trackInstance)
+      this.add(instance);
+
+    if (!allowMultiple && this.linkedInstances.size() > 0)
+      throw "[@rbxts/trash]: Trash class is already linked to another instance, and multiple instance links were disallowed";
+
+    this.linkedInstances.add(instance);
+    this.add(instance.Destroying.Once(() => this.destroy()));
   }
 
   /** Removes all tracked items and signals */
