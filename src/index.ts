@@ -61,6 +61,10 @@ export class Trash {
   private tracked: TrashItem[];
   private linkedInstances = new Set<Instance>;
 
+  public static is(value: unknown): value is Trash {
+    return typeIs(value, "table") && value instanceof Trash;
+  }
+
   /**
    * Constructs a new Trash instance.
    *
@@ -102,7 +106,7 @@ export class Trash {
     return typeIs(item, "function") ? undefined : item;
   }
 
-  public linkToInstance(instance: Instance, { allowMultiple = false, trackInstance = true }: LinkInstanceOptions = {}): void {
+  public linkToInstance(instance: Instance, { allowMultiple = false, trackInstance = true, completelyDestroy = true }: LinkInstanceOptions = {}): void {
     if (trackInstance)
       this.add(instance);
 
@@ -110,7 +114,7 @@ export class Trash {
       throw "[@rbxts/trash]: Trash class is already linked to another instance, and multiple instance links were disallowed";
 
     this.linkedInstances.add(instance);
-    this.add(instance.Destroying.Once(() => this.destroy()));
+    this.add(instance.Destroying.Once(() => completelyDestroy ? this.destroy() : this.purge()));
   }
 
   /** Removes all tracked items and signals */
