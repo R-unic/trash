@@ -175,6 +175,11 @@ export class Trash {
         continue;
       }
 
+      if (!typeIs(item, "function")) {
+        warn("[@rbxts/trash]: Invalid trash item:", item);
+        continue;
+      }
+
       item();
     }
     this.removeAll();
