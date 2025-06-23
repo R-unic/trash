@@ -55,7 +55,7 @@ const isPromise = t.interface({
   then: t.callback,
   catch: t.callback
 }) as t.check<Promise<unknown>>;
-const isImpendingMethodCall = t.strictArray(t.table, t.callback) as t.check<ImpendingMethodCall>;
+const isImpendingMethodCall = t.strictArray(t.union(t.table, t.Instance), t.callback) as t.check<ImpendingMethodCall>;
 
 export class Trash {
   private tracked: TrashItem[];
