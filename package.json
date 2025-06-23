@@ -7,7 +7,7 @@
     "watch": "rbxtsc -w",
     "prepublishOnly": "npm run build"
   },
-  "keywords": [],
+  "keywords": ["cleanup", "trash", "garbage", "maid", "janitor"],
   "author": "runicly",
   "license": "ISC",
   "description": "",
