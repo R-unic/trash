@@ -129,7 +129,7 @@ export class Trash {
         continue;
       }
 
-      if (isConnection(item)) {
+      if (typeIs(item, "RBXScriptConnection") || isConnection(item)) {
         item.Disconnect();
         continue;
       }
