@@ -35,7 +35,7 @@ interface LinkInstanceOptions {
   readonly completelyDestroy?: boolean;
 }
 
-const { cancel: cancelThread } = task;
+const { defer, cancel: cancelThread } = task;
 const fastDestroy = game.Destroy as (instance: Instance) => void;
 
 const isConnection = t.interface({
@@ -165,7 +165,13 @@ export class Trash {
       }
 
       if (typeIs(item, "thread")) {
-        cancelThread(item);
+        let wasCancelled = false;
+        if (coroutine.running() !== item)
+          [wasCancelled] = pcall(() => cancelThread(item));
+
+        if (!wasCancelled)
+          defer(() => cancelThread(item));
+
         continue;
       }
 
