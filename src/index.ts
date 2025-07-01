@@ -65,6 +65,12 @@ export class Trash {
     return typeIs(value, "table") && value instanceof Trash;
   }
 
+  public static tryDestroy(trash: Trash): void {
+    const { destroy } = trash as { destroy: (t: Trash) => void };
+    if (destroy === undefined || !typeIs(destroy, "function")) return;
+    destroy(trash);
+  }
+
   /**
    * Constructs a new Trash instance.
    *
@@ -114,7 +120,7 @@ export class Trash {
       throw "[@rbxts/trash]: Trash class is already linked to another instance, and multiple instance links were disallowed";
 
     this.linkedInstances.add(instance);
-    this.add(instance.Destroying.Once(() => completelyDestroy ? this.destroy() : this.purge()));
+    this.add(instance.Destroying.Once(() => completelyDestroy ? Trash.tryDestroy(this) : this.purge()));
   }
 
   /** Removes all tracked items and signals */
@@ -135,8 +141,7 @@ export class Trash {
       }
 
       if (isCustomDestroyable(item)) {
-        const { destroy } = (item as { destroy: (item: unknown) => void });
-        destroy(item);
+        Trash.tryDestroy(item as never);
         continue;
       }
 
