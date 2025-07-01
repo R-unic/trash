@@ -60,6 +60,7 @@ const isImpendingMethodCall = t.strictArray(t.union(t.table, t.Instance), t.call
 export class Trash {
   private tracked: TrashItem[];
   private linkedInstances = new Set<Instance>;
+  private __destroyed = false;
 
   public static is(value: unknown): value is Trash {
     return typeIs(value, "table") && value instanceof Trash;
@@ -67,7 +68,8 @@ export class Trash {
 
   public static tryDestroy(trash: Trash): void {
     const { destroy } = trash as { destroy: (t: Trash) => void };
-    if (destroy === undefined || !typeIs(destroy, "function")) return;
+    const destroyed = Trash.is(trash) && trash.__destroyed;
+    if (destroy === undefined || !typeIs(destroy, "function") || destroyed) return;
     destroy(trash);
   }
 
@@ -181,6 +183,13 @@ export class Trash {
       }
 
       if (!typeIs(item, "function")) {
+        const unknownItem = item as unknown;
+        const isDestroyedTrash = typeIs(unknownItem, "table")
+          && "__destroyed" in unknownItem
+          && unknownItem.__destroyed === true;
+
+        if (isDestroyedTrash) return;
+
         warn("[@rbxts/trash]: Invalid trash item:", item);
         continue;
       }
@@ -191,16 +200,21 @@ export class Trash {
   }
 
   /** Clears tracked items without invoking their cleanup methods  */
-  public removeAll(): void {
+  public removeAll(includeLinks = true): void {
     this.tracked = [];
+    if (includeLinks)
+      this.linkedInstances = new Set;
   }
 
   /**
-   * Purges all tracked items then clears the list of tracked items
-   * and removes the metatable of the object so that it can be garbage collected.
+   * Purges all tracked items then clears all fields, except `__destroyed`, and sets `__destroyed` to `true`.
+   * Subsequently removes the metatable of the object so that it can be garbage collected.
    */
   public destroy(): void {
     this.purge();
     setmetatable(this, undefined);
+    this.__destroyed = true;
+    this.tracked = undefined!;
+    this.linkedInstances = undefined!;
   }
 }
