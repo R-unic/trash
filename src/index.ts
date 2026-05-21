@@ -146,6 +146,10 @@ export class Trash {
       purgeItem(item);
   }
 
+  public getItems(): Set<TrashItem> {
+    return this.tracked;
+  }
+
   /**
    * Purges all tracked items then clears all fields, except `__destroyed`, and sets `__destroyed` to `true`.
    * Subsequently removes the metatable of the object so that it can be garbage collected.

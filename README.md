@@ -23,7 +23,7 @@ trash.destroy(); // cleans & renders class useless
 trash.removeAll(); //s remove all items without cleaning
 ```
 
-### All overloads for `Trash.add()`
+## All overloads for `Trash.add()`
 
 ```ts
 public add<Name extends keyof T, T extends { [K in Name]: Callback; }>(obj: T, methodName: Name): T;

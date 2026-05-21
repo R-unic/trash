@@ -1,13 +1,20 @@
 {
   "name": "@rbxts/trash",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "main": "out/init.lua",
   "scripts": {
     "build": "rbxtsc",
     "watch": "rbxtsc -w",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["cleanup", "trash", "garbage", "maid", "janitor"],
+  "keywords": [
+    "cleanup",
+    "trash",
+    "garbage",
+    "trove",
+    "maid",
+    "janitor"
+  ],
   "author": "runicly",
   "license": "ISC",
   "description": "",
