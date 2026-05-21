@@ -12,8 +12,10 @@ class Balls {
 const part = Workspace.WaitForChild("Part");
 const balls = new Balls;
 const trash1 = new Trash;
-const trash = trash1.add(new Trash);
+const trash = trash1.extend(); // same as trash1.add(new Trash)
 trash.add(part); // track items to clean
+trash.on(part.Touched, hit => print("touched", hit)) // same as trash.add(part.Touched.Connect(...))
+trash.once(part.Destroying, () => print("destroying part")) // same as trash.add(part.Destroying.Once(...))
 trash.add(balls);
 trash.add(() => print("took out trash")); // called when trash is purged
 trash.purge(); // cleans

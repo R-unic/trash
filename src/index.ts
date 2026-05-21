@@ -1,64 +1,8 @@
-import { t } from "@rbxts/t";
-
-interface CustomSignal {
-  DisconnectAll(): void
-}
-
-interface BaseSignalConnection {
-  Disconnect(): void;
-}
-
-interface RobloxDestroyable {
-  Destroy(): void;
-}
-
-interface CustomDestroyable {
-  destroy(): void;
-}
-
-type ImpendingMethodCall = [object: {}, method: Callback];
-
-export type TrashItem =
-  | CustomSignal
-  | BaseSignalConnection
-  | RobloxDestroyable
-  | CustomDestroyable
-  | Tween
-  | Promise<unknown>
-  | thread
-  | Callback
-  | ImpendingMethodCall;
-
-interface LinkInstanceOptions {
-  readonly allowMultiple?: boolean;
-  readonly trackInstance?: boolean;
-  readonly completelyDestroy?: boolean;
-}
-
-const { defer, cancel: cancelThread } = task;
-const fastDestroy = game.Destroy as (instance: Instance) => void;
-
-const isConnection = t.interface({
-  Disconnect: t.callback,
-});
-const isRbxDestroyable = t.interface({
-  Destroy: t.callback,
-});
-const isCustomDestroyable = t.interface({
-  destroy: t.callback,
-});
-const isCustomSignal = t.interface({
-  DisconnectAll: t.callback,
-});
-const isPromise = t.interface({
-  cancel: t.callback,
-  then: t.callback,
-  catch: t.callback
-}) as t.check<Promise<unknown>>;
-const isImpendingMethodCall = t.strictArray(t.union(t.table, t.Instance), t.callback) as t.check<ImpendingMethodCall>;
+import { isPromise, purgeItem } from "./utility";
+import type { TrashItem, SignalLike, ConnectionLike, Destroyable, LinkInstanceOptions } from "./types";
 
 export class Trash {
-  private tracked: TrashItem[];
+  private tracked = new Set<TrashItem>;
   private linkedInstances = new Set<Instance>;
   private __destroyed = false;
 
@@ -67,23 +11,66 @@ export class Trash {
   }
 
   public static tryDestroy(trash: Trash): void {
-    const { destroy } = trash as { destroy: (t: Trash) => void };
+    const { destroy } = trash as { destroy: (t: Trash) => void; };
     const destroyed = Trash.is(trash) && trash.__destroyed;
     if (destroy === undefined || !typeIs(destroy, "function") || destroyed) return;
     destroy(trash);
   }
 
   /**
-   * Constructs a new Trash instance.
+   * Creates a trash specifically for the callback function and
+   * ensures it is destroyed even if the callback throws an exception.
    *
-   * @param preallocationAmount - Optional number of items to preallocate in the tracked array.
-   *                              If provided, the tracked array is initialized with the specified
-   *                              length; otherwise, it defaults to an empty array.
+   * @example
+   * const value = Trash.scope(trash => {
+   *  trash.add(cleanup1);
+   *  trash.add(cleanup2);
+   *  someRiskyOperation();
+   * });
    */
-  public constructor(preallocationAmount?: number) {
-    this.tracked = preallocationAmount
-      ? new Array(preallocationAmount)
-      : [];
+  public static scope<T>(callback: (trash: Trash) => T): T {
+    const scoped = new Trash;
+    try {
+      return callback(scoped);
+    } finally {
+      scoped.destroy();
+    }
+  }
+
+  /**
+   * @example
+   * const conn = trash.add(signal.Connect(fn)); // ❌
+   * const conn = trash.on(signal, fn); // ✅
+   */
+  public on<T extends Callback>(signal: SignalLike<T>, fn: T): ConnectionLike {
+    return this.add(signal.Connect(fn));
+  }
+
+  /**
+   * @example
+   * const conn = trash.add(signal.Once(fn)); // ❌
+   * const conn = trash.once(signal, fn); // ✅
+   */
+  public once<T extends (...args: unknown[]) => unknown>(signal: SignalLike<T>, fn: T): ConnectionLike {
+    if (signal.Once && typeIs(signal.Once, "function")) {
+      return this.add(signal.Once(fn));
+    }
+
+    const conn = this.on(signal, ((...args) => {
+      fn(...args);
+      conn.Disconnect();
+    }) as T);
+
+    return conn;
+  }
+
+  /**
+   * @example
+   * const extended = trash.add(new Trash); // ❌
+   * const extended = trash.extend(); // ✅
+   */
+  public extend(): Trash {
+    return this.add(new Trash);
   }
 
   /**
@@ -97,24 +84,36 @@ export class Trash {
    * @returns The item itself.
    */
   public add<Name extends keyof T, T extends { [K in Name]: Callback; }>(obj: T, methodName: Name): T;
-  public add<T extends RobloxDestroyable>(destroyable: T): T;
-  public add<T extends CustomDestroyable>(destroyable: T): T;
-  public add<T extends CustomSignal>(signal: T): T;
-  public add<T extends BaseSignalConnection>(connection: T): T;
+  public add<T extends Destroyable>(destroyable: T): T;
+  public add<T extends SignalLike<Callback>>(signal: T): T;
+  public add<T extends ConnectionLike>(connection: T): T;
   public add<T extends Promise<unknown>>(promise: T): T;
   public add(thread: thread): thread;
   public add(onCleanup: Callback): void;
   public add<T extends TrashItem>(item: T, methodName?: keyof T): T | void {
-    this.tracked.push(
+    this.tracked.add(
       methodName === undefined
         ? item
         : [item, item[methodName] as Callback]
     );
 
-    return typeIs(item, "function") ? undefined : item;
+    if (typeIs(item, "function")) return;
+    if (isPromise(item)) {
+      const { cancel } = (item as { cancel: Callback; });
+      return item.finally(() => this.remove(cancel, true)) as T;
+    }
+
+    return item;
   }
 
-  public linkToInstance(instance: Instance, { allowMultiple = false, trackInstance = true, completelyDestroy = true }: LinkInstanceOptions = {}): void {
+  public linkToInstance(
+    instance: Instance,
+    {
+      allowMultiple = false,
+      trackInstance = true,
+      completelyDestroy = true
+    }: LinkInstanceOptions = {}
+  ): void {
     if (trackInstance)
       this.add(instance);
 
@@ -122,88 +121,29 @@ export class Trash {
       throw "[@rbxts/trash]: Trash class is already linked to another instance, and multiple instance links were disallowed";
 
     this.linkedInstances.add(instance);
-    this.add(instance.Destroying.Once(() => completelyDestroy ? Trash.tryDestroy(this) : this.purge()));
+    this.once(instance.Destroying, () => completelyDestroy ? Trash.tryDestroy(this) : this.purge());
   }
 
   /** Removes all tracked items and signals */
   public purge(): void {
-    for (const item of this.tracked) {
-      if (typeIs(item, "Instance")) {
-        if (item.IsA("Tween"))
-          item.Cancel();
-        else
-          fastDestroy(item as never);
-
-        continue;
-      }
-
-      if (typeIs(item, "RBXScriptConnection") || isConnection(item)) {
-        item.Disconnect();
-        continue;
-      }
-
-      if (isCustomDestroyable(item)) {
-        Trash.tryDestroy(item as never);
-        continue;
-      }
-
-      if (isRbxDestroyable(item)) {
-        const destroy = (item as { Destroy: (item: unknown) => void }).Destroy;
-        destroy(item);
-        continue;
-      }
-
-      if (isCustomSignal(item)) {
-        const disconnectAll = (item as { DisconnectAll: (item: unknown) => void }).DisconnectAll;
-        disconnectAll(item);
-        continue;
-      }
-
-      if (isImpendingMethodCall(item)) {
-        const [obj, method] = item;
-        method(obj);
-        continue;
-      }
-
-      if (isPromise(item)) {
-        const { cancel } = (item as { cancel: (item: unknown) => void });
-        cancel(item);
-        continue;
-      }
-
-      if (typeIs(item, "thread")) {
-        let wasCanceled = false;
-        if (coroutine.running() !== item)
-          [wasCanceled] = pcall(() => cancelThread(item));
-
-        if (!wasCanceled)
-          defer(() => cancelThread(item));
-
-        continue;
-      }
-
-      if (!typeIs(item, "function")) {
-        const unknownItem = item as unknown;
-        const isDestroyedTrash = typeIs(unknownItem, "table")
-          && "__destroyed" in unknownItem
-          && unknownItem.__destroyed === true;
-
-        if (isDestroyedTrash) return;
-
-        warn("[@rbxts/trash]: Invalid trash item:", item);
-        continue;
-      }
-
-      item();
-    }
+    this.tracked.forEach(purgeItem);
     this.removeAll();
   }
 
-  /** Clears tracked items without invoking their cleanup methods  */
-  public removeAll(includeLinks = true): void {
-    this.tracked = [];
-    if (includeLinks)
+  /** Clears tracked items without invoking their cleanup methods */
+  public removeAll(removeLinks = true): void {
+    this.tracked = new Set;
+    if (removeLinks)
       this.linkedInstances = new Set;
+  }
+
+  /** Clears an individual tracked item, optionally cleaning it up */
+  public remove(item: TrashItem, cleanup = false, removeLink = true): void {
+    this.tracked.delete(item);
+    if (removeLink && typeIs(item, "Instance"))
+      this.linkedInstances.delete(item);
+    if (cleanup)
+      purgeItem(item);
   }
 
   /**
