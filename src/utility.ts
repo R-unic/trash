@@ -1,6 +1,6 @@
 import { t } from "@rbxts/t";
 
-import { Trash } from ".";
+import type { Trash } from ".";
 import type { ImpendingMethodCall, TrashItem } from "./types";
 
 const { defer, cancel: cancelThread } = task;
@@ -18,6 +18,17 @@ export const isPromise = t.interface({
   catch: t.callback
 }) as t.check<Promise<unknown>>;
 
+export function isTrash(value: unknown): value is Trash {
+  return typeIs(value, "table") && "__destroyed" in value && "destroy" in value;
+}
+
+export function tryDestroy(trash: Trash): void {
+  if (!isTrash(trash)) return;
+  const { destroy, __destroyed } = trash as unknown as { destroy: (t: Trash) => void, __destroyed: boolean; };
+  if (destroy === undefined || !typeIs(destroy, "function") || __destroyed) return;
+  destroy(trash);
+}
+
 export function purgeItem(item: TrashItem): void {
   if (typeIs(item, "Instance")) {
     return item.IsA("Tween") ? item.Cancel() : fastDestroy(item);
@@ -25,8 +36,8 @@ export function purgeItem(item: TrashItem): void {
   if (typeIs(item, "RBXScriptConnection") || isConnection(item)) {
     return item.Disconnect();
   }
-  if (isCustomDestroyable(item)) {
-    return Trash.tryDestroy(item as Trash);
+  if (isCustomDestroyable(item) || isTrash(item)) {
+    return tryDestroy(item as Trash);
   }
   if (isRbxDestroyable(item)) {
     const destroy = (item as { Destroy: (item: unknown) => void; }).Destroy;

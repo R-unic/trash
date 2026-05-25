@@ -1,21 +1,10 @@
-import { isPromise, purgeItem } from "./utility";
+import { isPromise, purgeItem, tryDestroy } from "./utility";
 import type { TrashItem, SignalLike, ConnectionLike, Destroyable, LinkInstanceOptions } from "./types";
 
 export class Trash {
   private tracked = new Set<TrashItem>;
   private linkedInstances = new Set<Instance>;
   private __destroyed = false;
-
-  public static is(value: unknown): value is Trash {
-    return typeIs(value, "table") && value instanceof Trash;
-  }
-
-  public static tryDestroy(trash: Trash): void {
-    const { destroy } = trash as { destroy: (t: Trash) => void; };
-    const destroyed = Trash.is(trash) && trash.__destroyed;
-    if (destroy === undefined || !typeIs(destroy, "function") || destroyed) return;
-    destroy(trash);
-  }
 
   /**
    * Creates a trash specifically for the callback function and
@@ -121,7 +110,7 @@ export class Trash {
       throw "[@rbxts/trash]: Trash class is already linked to another instance, and multiple instance links were disallowed";
 
     this.linkedInstances.add(instance);
-    this.once(instance.Destroying, () => completelyDestroy ? Trash.tryDestroy(this) : this.purge());
+    this.once(instance.Destroying, () => completelyDestroy ? tryDestroy(this) : this.purge());
   }
 
   /** Removes all tracked items and signals */
